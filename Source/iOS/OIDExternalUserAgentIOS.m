@@ -27,8 +27,13 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
+#if __IPHONE_OS_VERSION_MAX_ALLOWED >= 130000
+@interface OIDExternalUserAgentIOS ()<SFSafariViewControllerDelegate, ASWebAuthenticationPresentationContextProviding>
+@end
+#else
 @interface OIDExternalUserAgentIOS ()<SFSafariViewControllerDelegate>
 @end
+#endif
 
 @implementation OIDExternalUserAgentIOS {
   UIViewController *_presentingViewController;
@@ -43,10 +48,22 @@ NS_ASSUME_NONNULL_BEGIN
 #pragma clang diagnostic pop
 }
 
+- (nullable instancetype)init {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wnonnull"
+  return [self initWithPresentingViewController:nil];
+#pragma clang diagnostic pop
+}
+
 - (nullable instancetype)initWithPresentingViewController:
-        (UIViewController *)presentingViewController {
+    (UIViewController *)presentingViewController {
   self = [super init];
   if (self) {
+#if __IPHONE_OS_VERSION_MAX_ALLOWED >= 130000
+    NSAssert(presentingViewController != nil,
+             @"presentingViewController cannot be nil on iOS 13");
+#endif // __IPHONE_OS_VERSION_MAX_ALLOWED >= 130000
+    
     _presentingViewController = presentingViewController;
   }
   return self;
@@ -90,6 +107,11 @@ NS_ASSUME_NONNULL_BEGIN
           [strongSelf->_session failExternalUserAgentFlowWithError:safariError];
         }
       }];
+#if __IPHONE_OS_VERSION_MAX_ALLOWED >= 130000
+      if (@available(iOS 13.0, *)) {
+          authenticationVC.presentationContextProvider = self;
+      }
+#endif
       _webAuthenticationVC = authenticationVC;
       openedUserAgent = [authenticationVC start];
     }
@@ -126,7 +148,7 @@ NS_ASSUME_NONNULL_BEGIN
   }
   // iOS 9 and 10, use SFSafariViewController
   if (@available(iOS 9.0, *)) {
-    if (!openedUserAgent) {
+    if (!openedUserAgent && _presentingViewController) {
       SFSafariViewController *safariVC =
           [[SFSafariViewController alloc] initWithURL:requestURL];
       safariVC.delegate = self;
@@ -153,6 +175,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)dismissExternalUserAgentAnimated:(BOOL)animated completion:(void (^)(void))completion {
   if (!_externalUserAgentFlowInProgress) {
     // Ignore this call if there is no authorization flow in progress.
+    if (completion) completion();
     return;
   }
   
@@ -208,6 +231,14 @@ NS_ASSUME_NONNULL_BEGIN
                                         description:@"No external user agent flow in progress."];
   [session failExternalUserAgentFlowWithError:error];
 }
+
+#if __IPHONE_OS_VERSION_MAX_ALLOWED >= 130000
+#pragma mark - ASWebAuthenticationPresentationContextProviding
+
+- (ASPresentationAnchor)presentationAnchorForWebAuthenticationSession:(ASWebAuthenticationSession *)session API_AVAILABLE(ios(13.0)){
+  return _presentingViewController.view.window;
+}
+#endif // __IPHONE_OS_VERSION_MAX_ALLOWED >= 130000
 
 @end
 
